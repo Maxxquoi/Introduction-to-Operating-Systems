@@ -15,8 +15,4 @@ pthread-creation-quiz-3: pthread-creation-quiz-3.c
 	gcc -o pthread-creation-quiz-3 pthread-creation-quiz-3.c -pthread
 
 clean:
-	rm producer-consumer
-	rm pthread-creation
-	rm pthread-creation-quiz-1
-	rm pthread-creation-quiz-2
-	rm pthread-creation-quiz-3
+	rm producer-consumer pthread-creation pthread-creation-quiz-1 pthread-creation-quiz-2 pthread-creation-quiz-3
