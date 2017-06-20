@@ -1,6 +1,6 @@
 
 ReadWrite: ReadWrite.c
-	gcc -o ReadWrite ReadWrite.c -pthread
+	gcc -std=c99 -o ReadWrite ReadWrite.c -pthread
 
 Clean:
 	rm ReadWrite
