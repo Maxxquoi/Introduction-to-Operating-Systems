@@ -1,96 +1,137 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
+#include <unistd.h>
 #include <pthread.h>
+#include <time.h>
 
-#define NUM_THREADS 10
+#define NUM_READERS 5
+#define NUM_READS 5
+#define NUM_WRITERS 5
+#define NUM_WRITES 5
 
-//
-// Created by Emmanuel Massaquoi on 6/19/17.
-//
+unsigned int gSharedValue = 0;
+int gWaitingReaders = 0;
+int gReaders = 0;
 
-int shared_var = 0;
-int resource_use;
-int num_reader = 0;
 
-int reading = 0;
-int writing = 1;
+pthread_mutex_t gSharedMemoryLock = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t gReadPhase = PTHREAD_COND_INITIALIZER;
+pthread_cond_t gWritePhase = PTHREAD_COND_INITIALIZER;
 
-pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t read_phase = PTHREAD_COND_INITIALIZER;
-pthread_cond_t write_phase = PTHREAD_COND_INITIALIZER;
+void *reader(void *param);
+void *writer(void *param);
+int usleep(__useconds_t sec);
 
-void *reader (void *param);
-void *writer (void *param);
+//void waitFor(unsigned int secs);
 
 
 int main(int argc, char *argv[]) {
 
-    pthread_t tid[NUM_THREADS];
+    int readerNum[NUM_READERS];
+    int writerNum[NUM_WRITERS];
 
-    for (int i = 0; i < 5; i++) {
+    pthread_t readerThreadIDs[NUM_READERS];
+    pthread_t writerThreadIDs[NUM_WRITERS];
 
-        printf("Create Reader\n");
-        if(pthread_create(&tid[i], NULL, reader, NULL) != 0) {
+    srandom((unsigned int)time(NULL));
+
+
+    for (int i = 0; i < NUM_READERS; i++) {
+        readerNum[i] = i;
+
+        if(pthread_create(&readerThreadIDs[i], NULL, reader, &readerNum[i]) != 0) {
             fprintf(stderr, "Unable to create reader thread");
             exit(1);
         }
+    }
 
-        printf("Create Writer\n");
-        if(pthread_create(&tid[i+5], NULL, writer, NULL) != 0) {
+    for (int i = 0; i < NUM_WRITERS; i++) {
+        writerNum[i] = i;
+
+        if(pthread_create(&writerThreadIDs[i], NULL, writer, &writerNum[i]) != 0) {
             fprintf(stderr, "Unable to create writer thread");
             exit(1);
         }
     }
 
-    for (int j = 0; j < NUM_THREADS; ++j) {
-        pthread_join(tid[j], NULL);
+
+    for (int i = 0; i < NUM_READERS; i++) {
+        pthread_join(readerThreadIDs[i], NULL);
     }
 
-    printf("Parent quiting\n");
+    for (int i = 0; i < NUM_WRITERS; i++) {
+        pthread_join(writerThreadIDs[i], NULL);
+    }
 
     return 0;
 }
 
 void *reader(void *param) {
 
-    for (int i = 1; i <=20; i++) {
+    int id = *((int*)param);
+    int numReaders = 0;
 
-        pthread_mutex_lock(&m);
+    for (int i = 0; i < NUM_READS; i++) {
 
-            while (resource_use == writing) {
-                pthread_cond_wait(&read_phase, &m);
+        usleep(1000 * (random() % NUM_READERS + NUM_WRITERS));
+
+        pthread_mutex_lock(&gSharedMemoryLock);
+
+            gWaitingReaders++;
+            while (gReaders == -1) {
+                pthread_cond_wait(&gReadPhase, &gSharedMemoryLock);
             }
+            gWaitingReaders--;
+            numReaders = ++gReaders;
 
-            printf("Reader Value: %d\n", shared_var);
-            printf("Number of Readers Present: %d\n", num_reader);
+        pthread_mutex_unlock(&gSharedMemoryLock);
 
-        resource_use = reading;
-        pthread_cond_broadcast(&write_phase);
+        fprintf(stdout, "[r%d] reading %u  [readers: %2d]\n", id, gSharedValue, numReaders);
 
-        pthread_mutex_unlock(&m);
+        pthread_mutex_lock(&gSharedMemoryLock);
+            gReaders--;
+            if (gReaders == 0) {
+                pthread_cond_signal(&gWritePhase);
+            }
+        pthread_mutex_unlock(&gSharedMemoryLock);
     }
 
-    return 0;
+    pthread_exit(0);
 }
 
 void *writer(void *param) {
 
-    for (int i = 1; i <= 20; ++i) {
-        pthread_mutex_lock(&m);
+    int id = *((int*)param);
+    int numReaders = 0;
 
-            while (resource_use == reading || num_reader != 0) {
-                pthread_cond_wait(&write_phase, &m);
+    for (int i = 0; i < NUM_WRITES; ++i) {
+
+        usleep(1000 * (random() % NUM_READERS + NUM_WRITERS));
+
+        pthread_mutex_lock(&gSharedMemoryLock);
+            while (gReaders != 0) {
+                pthread_cond_wait(&gWritePhase, &gSharedMemoryLock);
             }
+            gReaders = -1;
+            numReaders = gReaders;
+        pthread_mutex_unlock(&gSharedMemoryLock);
 
-        shared_var = i;
-        printf("Written Value: %d\n", shared_var);
-        printf("Number of Readers Present: %d\n", num_reader);
+        fprintf(stdout, "[w%d] writing %u* [readers: %2d]\n", id, ++gSharedValue, numReaders);
 
-        resource_use = writing;
-        pthread_cond_broadcast(&read_phase);
-
-        pthread_mutex_unlock(&m);
+        pthread_mutex_lock(&gSharedMemoryLock);
+        gReaders = 0;
+            if(gWaitingReaders > 0) {
+                pthread_cond_broadcast(&gReadPhase);
+            } else {
+                pthread_cond_signal(&gWritePhase);
+            }
+        pthread_mutex_unlock(&gSharedMemoryLock);
     }
 
+    pthread_exit(0);
 }
+
+/*void waitFor (unsigned int secs) {
+    unsigned int retTime = time(0) + secs;
+    while(time(0) < retTime);
+}*/
