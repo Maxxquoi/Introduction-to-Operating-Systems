@@ -19,7 +19,7 @@ void *consumer (void *param);
 int main(int argc, char *argv[]) {
 
 	pthread_t tid1, tid2;  /* thread identifiers */
-	int i;
+//	int i;
 
 	/* create the threads; may be any number, in general */
 	if(pthread_create(&tid1, NULL, producer, NULL) != 0) {
